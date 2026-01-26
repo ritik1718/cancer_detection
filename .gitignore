@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Model files (too large for GitHub)
+*.pth
+*.pkl
+*.h5
+*.ckpt
+
+# Data files
+data/
+*.csv
+*.zip
+*.jpg
+*.jpeg
+*.png
+*.bmp
+
+# Training outputs
+training_history.png
+confusion_matrix.png
+confusion_matrix_tta.png
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep models folder structure but not the actual models
+models/*
+!models/.gitkeep
+
+# Temp files
+temp_dataset/
+temp_dataset2/
+oral-cancer-dataset/

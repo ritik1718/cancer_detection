@@ -1,0 +1,212 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oral Cancer Detector</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        #dropzone {
+            border: 3px dashed #ccc;
+            border-radius: 10px;
+            padding: 60px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8f9fa;
+        }
+        #dropzone:hover, #dropzone.dragover {
+            border-color: #667eea;
+            background: #e8eaf6;
+        }
+        #dropzone p {
+            color: #666;
+            font-size: 16px;
+        }
+        #analyzebtn {
+            width: 100%;
+            padding: 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background 0.3s;
+        }
+        #analyzebtn:hover:not(:disabled) {
+            background: #5568d3;
+        }
+        #analyzebtn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #preview {
+            text-align: center;
+            margin-top: 20px;
+        }
+        #preview img {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #results {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: none;
+        }
+        #results h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        #results p {
+            margin: 10px 0;
+            font-size: 16px;
+        }
+        .prob-bar {
+            background: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .prob-fill {
+            background: #667eea;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            transition: width 0.5s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 Oral Cancer Detection</h1>
+        
+        <div id="dropzone">
+            <p>📁 Drag & drop image here or click to select</p>
+        </div>
+        <input type="file" id="fileinput" accept="image/*" style="display: none;">
+        
+        <button onclick="analyze()" id="analyzebtn" disabled>🔍 Analyze Image</button>
+        
+        <div id="preview"></div>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const fileinput = document.getElementById('fileinput');
+        const preview = document.getElementById('preview');
+        const results = document.getElementById('results');
+        const analyzebtn = document.getElementById('analyzebtn');
+
+        dropzone.addEventListener('click', function() { fileinput.click(); });
+        
+        dropzone.addEventListener('dragover', function(e) { 
+            e.preventDefault(); 
+            dropzone.classList.add('dragover'); 
+        });
+        
+        dropzone.addEventListener('dragleave', function() { 
+            dropzone.classList.remove('dragover'); 
+        });
+        
+        dropzone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            handleFile(file);
+        });
+        
+        fileinput.addEventListener('change', function(e) { 
+            handleFile(e.target.files[0]); 
+        });
+
+        function handleFile(file) {
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.innerHTML = '<img src="' + e.target.result + '">';
+                    analyzebtn.disabled = false;
+                    results.style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        async function analyze() {
+            const file = fileinput.files[0];
+            if (!file) return;
+            
+            analyzebtn.disabled = true;
+            analyzebtn.textContent = '⏳ Analyzing...';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/predict', { method: 'POST', body: formData });
+                const result = await response.json();
+                
+                if (result.error) {
+                    results.innerHTML = '<p style="color: red;">❌ Error: ' + result.error + '</p>';
+                    results.style.display = 'block';
+                } else {
+                    const normalProb = parseFloat(result.probs.Normal);
+                    const osccProb = parseFloat(result.probs.OSCC);
+                    
+                    results.innerHTML = 
+                        '<h2>📊 Prediction: ' + result.class + '</h2>' +
+                        '<p><strong>Confidence:</strong> ' + result.confidence + '</p>' +
+                        '<div style="margin-top: 20px;">' +
+                            '<p><strong>Class Probabilities:</strong></p>' +
+                            '<div class="prob-bar">' +
+                                '<div class="prob-fill" style="width: ' + normalProb + '%">Normal: ' + result.probs.Normal + '</div>' +
+                            '</div>' +
+                            '<div class="prob-bar">' +
+                                '<div class="prob-fill" style="width: ' + osccProb + '%; background: #f44336;">OSCC: ' + result.probs.OSCC + '</div>' +
+                            '</div>' +
+                        '</div>';
+                    results.style.display = 'block';
+                }
+            } catch (error) {
+                results.innerHTML = '<p style="color: red;">❌ Error: ' + error.message + '</p>';
+                results.style.display = 'block';
+            }
+            
+            analyzebtn.disabled = false;
+            analyzebtn.textContent = '🔍 Analyze Image';
+        }
+    </script>
+</body>
+</html>
