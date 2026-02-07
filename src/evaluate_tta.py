@@ -170,7 +170,11 @@ def main():
     print("=" * 50)
     
     # Load model
-    model = get_model(num_classes=Config.NUM_CLASSES, pretrained=False)
+    model = get_model(
+    num_classes=Config.NUM_CLASSES, 
+    pretrained=False,
+    model_name=Config.MODEL_NAME  # ✅ Add this
+)
     checkpoint = torch.load(Config.BEST_MODEL_PATH, map_location=Config.DEVICE, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     print("Model loaded successfully\n")

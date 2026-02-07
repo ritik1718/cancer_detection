@@ -16,7 +16,11 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 device = Config.DEVICE
-model = get_model(num_classes=2, pretrained=False)
+model =  get_model(
+    num_classes=Config.NUM_CLASSES, 
+    pretrained=False,
+    model_name=Config.MODEL_NAME  # ✅ Add this
+)
 checkpoint = torch.load(Config.BEST_MODEL_PATH, map_location=device, weights_only=False)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.to(device)

@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -127,7 +127,7 @@ def validate(model, dataloader, criterion, device):
 
 def main():
     print("=" * 50)
-    print("Oral Cancer Detection - Heavy Class Weights Training")
+    print("Oral Cancer Detection - DenseNet121 Training")
     print("=" * 50)
     print(f"Device: {Config.DEVICE}")
     print(f"Batch Size: {Config.BATCH_SIZE}")
@@ -139,7 +139,7 @@ def main():
     train_dataset = OralCancerDataset(
         Config.TRAIN_DIR, 
         transform=get_transforms(train=True, img_size=Config.IMG_SIZE),
-        extra_normal_aug=True  # ✅ ENABLED for aggressive Normal augmentation (but cleaner now)
+        extra_normal_aug=True  # ✅ ENABLED for aggressive Normal augmentation
     )
     val_dataset = OralCancerDataset(
         Config.VAL_DIR, 
