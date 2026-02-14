@@ -49,6 +49,14 @@ def get_model(num_classes=2, pretrained=True, model_name='densenet121'):
     elif model_name == 'swin_base_384':
         # Swin Transformer Base 384x384 (Better detail)
         model = timm.create_model('swin_base_patch4_window12_384', pretrained=pretrained, num_classes=num_classes)
+
+    elif model_name == 'swin_large_patch4_window12_384':
+        # Swin Transformer Large 384x384
+        model = timm.create_model('swin_large_patch4_window12_384', pretrained=pretrained, num_classes=num_classes)
+
+    elif model_name == 'vit_base_patch16_384':
+        # ViT Base 384x384
+        model = timm.create_model('vit_base_patch16_384', pretrained=pretrained, num_classes=num_classes)
         
     else:
         raise ValueError(f"Unknown model: {model_name}")

@@ -13,16 +13,16 @@ class Config:
     # --- MODEL SELECTION ---
     # Options: 'densenet121', 'vit_base', 'vit_small', 'vit_large', 
     #          'swin_base', 'swin_small', 'vit_base_384', 'swin_base_384'
-    MODEL_NAME = 'vit_base'
+    MODEL_NAME = 'vit_base_patch16_384'
     PRETRAINED = True
     
     # Training hyperparameters
-    BATCH_SIZE = 16
+    BATCH_SIZE = 8
     NUM_EPOCHS = 30
-    LEARNING_RATE = 1e-4
+    LEARNING_RATE = 5e-5
     WEIGHT_DECAY = 1e-4
     
-    IMG_SIZE = 224
+    IMG_SIZE = 384
     MEAN = [0.485, 0.456, 0.406]
     STD = [0.229, 0.224, 0.225]
     
