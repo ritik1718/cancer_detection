@@ -105,7 +105,7 @@ def main():
             'name': 'vit_base_384',
             'path': r'c:\Projects\oral-cancer-detection\vit-base-experiment\models\saved_models\best_model_vit_base.pth',
             'img_size': 384,
-            'weight': 2.4,  
+            'weight': 1.0,  
             'desc': 'ViT Base (Global Features)'
         }
     ]
@@ -167,7 +167,7 @@ def main():
     print(f"Total test images: {list(dataset_sizes)[0]}")
     
     # ---------------------------------------------------------
-    # Evaluation Loop
+    # Evaluation Loop (Confidence-Based Selection)
     # ---------------------------------------------------------
     all_preds = []
     all_labels = []
@@ -175,7 +175,8 @@ def main():
     loader_list = [loaders[size] for size in sorted(unique_sizes)]
     size_to_idx = {size: i for i, size in enumerate(sorted(unique_sizes))}
     
-    print("\n🚀 Running Ensemble Inference with 5x TTA (Original + Flips + Rotation)...")
+    print("\n🚀 Running Confidence-Based Ensemble with 5x TTA...")
+    print("   Strategy: For each image, the model with higher confidence decides.\n")
     
     with torch.no_grad():
         # Iterate through all loaders simultaneously
@@ -189,20 +190,18 @@ def main():
                     raise RuntimeError("Data ordering mismatch between loaders!")
             
             target_labels = labels_reference.to(DEVICE)
+            batch_size = target_labels.size(0)
             
-            # Ensemble Aggregation
-            ensemble_probs = None
-            total_weight = 0
+            # Collect each model's TTA-averaged probabilities
+            all_model_probs = []  # List of (B, num_classes) tensors
             
             for model_info in loaded_models:
                 # Select correct input for this model
                 size = model_info['img_size']
                 idx = size_to_idx[size]
                 images = batch_tuple[idx][0].to(DEVICE)
-                weight = model_info['weight']
                 
                 # --- TTA (Test Time Augmentation) ---
-                # Initialize probabilities accumulator
                 tta_probs_sum = None
                 
                 # 1. Original
@@ -236,19 +235,27 @@ def main():
                 
                 # Average TTA probs (5 augmentations)
                 model_probs = tta_probs_sum / 5.0
-                
-                # Weighted accumulation for ensemble
-                if ensemble_probs is None:
-                    ensemble_probs = model_probs * weight
-                else:
-                    ensemble_probs += model_probs * weight
-                total_weight += weight
+                all_model_probs.append(model_probs)
             
-            # Normalize probabilities
-            ensemble_probs /= total_weight
+            # --- Confidence-Based Selection ---
+            # For each sample, pick the prediction from the model with highest confidence
+            # confidence = max probability across classes
             
-            # Get Predictions
-            _, preds = torch.max(ensemble_probs, 1)
+            # Stack: (num_models, B, num_classes)
+            stacked_probs = torch.stack(all_model_probs, dim=0)
+            
+            # Get max confidence per model per sample: (num_models, B)
+            max_confidences, _ = torch.max(stacked_probs, dim=2)
+            
+            # Find which model is most confident for each sample: (B,)
+            best_model_idx = torch.argmax(max_confidences, dim=0)
+            
+            # Select predictions from the most confident model for each sample
+            preds = torch.zeros(batch_size, dtype=torch.long, device=DEVICE)
+            for i in range(batch_size):
+                chosen_model = best_model_idx[i].item()
+                _, pred = torch.max(stacked_probs[chosen_model, i], dim=0)
+                preds[i] = pred
             
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(target_labels.cpu().numpy())

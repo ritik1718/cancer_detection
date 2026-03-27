@@ -19,7 +19,7 @@ from src.config import Config
 from src.dataset import OralCancerDataset, get_transforms
 
 # ============================================
-# HYBRID EVALUATION CONFIGURATION
+# HYBRID 3-MODEL EVALUATION CONFIGURATION
 # ============================================
 IMG_SIZE = 384
 BATCH_SIZE = 4
@@ -30,63 +30,77 @@ CLASS_NAMES = ['Normal', 'OSCC']
 DATA_DIR = r'c:\Projects\oral-cancer-detection\data\raw'
 TEST_DIR = os.path.join(DATA_DIR, 'test')
 
-# Model checkpoint path
-MODEL_SAVE_DIR = r'c:\Projects\oral-cancer-detection\models\saved_models'
-BEST_MODEL_PATH = os.path.join(MODEL_SAVE_DIR, 'best_model_hybrid_vit_densenet_50epochs.pth')
+# Model checkpoint path — separate folder from other models
+MODEL_SAVE_DIR = r'c:\Projects\oral-cancer-detection\models\saved_models_hybrid3'
+BEST_MODEL_PATH = os.path.join(MODEL_SAVE_DIR, 'best_model_hybrid_3model.pth')
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-class HybridViTDenseNet(nn.Module):
+class Hybrid3Model(nn.Module):
     """
     Hybrid Model combining:
     - DenseNet121: Local feature extraction (textures, edges, local patterns)
     - ViT-Base-384: Global feature extraction (long-range dependencies, context)
-    
+    - Swin-Base-384: Hierarchical feature extraction (multi-scale attention)
+
     Architecture:
-        Input (384x384) → [DenseNet Features] + [ViT CLS Token] → Fusion → Classifier
+        Input (384x384) → [DenseNet] + [ViT CLS] + [Swin] → Fusion → Classifier
     """
-    
+
     def __init__(self, num_classes=2, pretrained=False):
-        super(HybridViTDenseNet, self).__init__()
-        
+        super(Hybrid3Model, self).__init__()
+
         # 1. LOCAL FEATURES: DenseNet121
         if pretrained:
             self.densenet = models.densenet121(weights=DenseNet121_Weights.IMAGENET1K_V1)
         else:
             self.densenet = models.densenet121(weights=None)
-        
+
         self.densenet_features = self.densenet.features
         self.densenet_pooling = nn.AdaptiveAvgPool2d((1, 1))
         densenet_dim = 1024
-        
+
         # 2. GLOBAL FEATURES: ViT-Base-384
         self.vit = timm.create_model('vit_base_patch16_384', pretrained=pretrained, num_classes=0)
         vit_dim = 768
-        
-        # 3. FUSION AND CLASSIFICATION
-        self.fusion_dim = densenet_dim + vit_dim  # 1024 + 768 = 1792
-        
+
+        # 3. HIERARCHICAL FEATURES: Swin-Base-384
+        self.swin = timm.create_model('swin_base_patch4_window12_384', pretrained=pretrained, num_classes=0)
+        swin_dim = 1024
+
+        # 4. FUSION CLASSIFIER
+        self.fusion_dim = densenet_dim + vit_dim + swin_dim  # 2816
+
         self.classifier = nn.Sequential(
             nn.Linear(self.fusion_dim, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(512, num_classes)
+
+            nn.Linear(512, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+
+            nn.Linear(128, num_classes)
         )
-        
+
     def forward(self, x):
         # --- DenseNet Branch (Local) ---
         dn_feat = self.densenet_features(x)
         dn_feat = self.densenet_pooling(dn_feat)
         dn_feat = torch.flatten(dn_feat, 1)
-        
+
         # --- ViT Branch (Global) ---
         vit_feat = self.vit(x)
-             
+
+        # --- Swin Branch (Hierarchical) ---
+        swin_feat = self.swin(x)
+
         # --- Fusion ---
-        combined = torch.cat((dn_feat, vit_feat), dim=1)
-        
+        combined = torch.cat((dn_feat, vit_feat, swin_feat), dim=1)
+
         output = self.classifier(combined)
         return output
 
@@ -96,30 +110,33 @@ def evaluate_model(model, dataloader, device):
     model.eval()
     all_preds = []
     all_labels = []
+    all_probs = []
     correct = 0
     total = 0
-    
+
     with torch.no_grad():
         progress_bar = tqdm(dataloader, desc='Evaluating')
         for images, labels in progress_bar:
             images, labels = images.to(device), labels.to(device)
-            
+
             outputs = model(images)
+            probs = torch.softmax(outputs, dim=1)
             _, predicted = torch.max(outputs.data, 1)
-            
+
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
-            
+            all_probs.extend(probs.cpu().numpy())
+
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-            
-            progress_bar.set_postfix({'acc': f'{100.*correct/total:.2f}%'})
-    
+
+            progress_bar.set_postfix({'acc': f'{100. * correct / total:.2f}%'})
+
     accuracy = 100. * correct / total
-    return np.array(all_preds), np.array(all_labels), accuracy
+    return np.array(all_preds), np.array(all_labels), np.array(all_probs), accuracy
 
 
-def plot_confusion_matrix(y_true, y_pred, class_names, save_path='confusion_matrix_hybrid.png'):
+def plot_confusion_matrix(y_true, y_pred, class_names, save_path='confusion_matrix_hybrid3.png'):
     """Plot and save confusion matrix."""
     cm = confusion_matrix(y_true, y_pred)
     plt.figure(figsize=(8, 6))
@@ -127,7 +144,7 @@ def plot_confusion_matrix(y_true, y_pred, class_names, save_path='confusion_matr
                 xticklabels=class_names, yticklabels=class_names)
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
-    plt.title('Confusion Matrix - Hybrid Model (ViT + DenseNet)')
+    plt.title('Confusion Matrix - Hybrid 3-Model (ViT + Swin + DenseNet)')
     plt.tight_layout()
     plt.savefig(save_path)
     plt.close()
@@ -152,21 +169,47 @@ def print_per_class_accuracy(y_true, y_pred, class_names):
             print(f"  {name}: {acc:.2f}% ({cm[i][i]}/{cm[i].sum()})")
 
 
+def print_confidence_stats(all_probs, all_labels, all_preds, class_names):
+    """Print prediction confidence statistics."""
+    print("\n--- Prediction Confidence Statistics ---")
+    all_probs = np.array(all_probs)
+
+    # Overall confidence
+    max_probs = np.max(all_probs, axis=1)
+    print(f"  Overall mean confidence: {np.mean(max_probs) * 100:.2f}%")
+    print(f"  Overall min  confidence: {np.min(max_probs) * 100:.2f}%")
+
+    # Correct vs wrong confidence
+    correct_mask = (np.array(all_preds) == np.array(all_labels))
+    if correct_mask.sum() > 0:
+        print(f"  Correct predictions mean confidence: {np.mean(max_probs[correct_mask]) * 100:.2f}%")
+    if (~correct_mask).sum() > 0:
+        print(f"  Wrong predictions mean confidence:   {np.mean(max_probs[~correct_mask]) * 100:.2f}%")
+
+    # Per-class confidence
+    for i, name in enumerate(class_names):
+        mask = (np.array(all_labels) == i)
+        if mask.sum() > 0:
+            class_probs = max_probs[mask]
+            print(f"  {name} mean confidence: {np.mean(class_probs) * 100:.2f}%")
+
+
 def main():
     print("=" * 60)
-    print("🔬 HYBRID MODEL EVALUATION (ViT-Base-384 + DenseNet121)")
+    print("🔬 HYBRID 3-MODEL EVALUATION")
+    print("   (DenseNet121 + ViT-Base-384 + Swin-Base-384)")
     print("=" * 60)
     print(f"Device: {DEVICE}")
     print(f"Model Path: {BEST_MODEL_PATH}")
     print(f"Test Dir: {TEST_DIR}")
     print("=" * 60)
-    
+
     # Check if model exists
     if not os.path.exists(BEST_MODEL_PATH):
         print(f"\n❌ Model checkpoint not found at: {BEST_MODEL_PATH}")
-        print("   Please train the hybrid model first using hybrid_training.py")
+        print("   Please train the hybrid 3-model first using hybrid_3model_train.py")
         return
-    
+
     # Load test dataset
     print("\n📁 Loading test dataset...")
     test_dataset = OralCancerDataset(
@@ -180,37 +223,40 @@ def main():
         num_workers=0,
         pin_memory=True
     )
-    
+
     print(f"  Test samples: {len(test_dataset)}")
     print(f"  Test batches: {len(test_loader)}")
-    
+
     # Initialize model (pretrained=False since we load weights from checkpoint)
-    print("\n🧠 Loading Hybrid Model...")
-    model = HybridViTDenseNet(num_classes=NUM_CLASSES, pretrained=False).to(DEVICE)
-    
+    print("\n🧠 Loading Hybrid 3-Model...")
+    model = Hybrid3Model(num_classes=NUM_CLASSES, pretrained=False).to(DEVICE)
+
     # Load trained weights
     checkpoint = torch.load(BEST_MODEL_PATH, map_location=DEVICE, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
-    
+
     # Print checkpoint info
     if 'epoch' in checkpoint:
         print(f"  Checkpoint epoch: {checkpoint['epoch'] + 1}")
     if 'accuracy' in checkpoint:
         print(f"  Checkpoint val accuracy: {checkpoint['accuracy']:.2f}%")
+    if 'model_type' in checkpoint:
+        print(f"  Model type: {checkpoint['model_type']}")
     print("  ✅ Model loaded successfully\n")
-    
+
     # Evaluate
-    predictions, labels, accuracy = evaluate_model(model, test_loader, DEVICE)
-    
+    predictions, labels, probs, accuracy = evaluate_model(model, test_loader, DEVICE)
+
     # Results
     print("\n" + "=" * 60)
     print(f"🎯 Test Accuracy: {accuracy:.2f}%")
     print("=" * 60)
-    
+
     print_per_class_accuracy(labels, predictions, CLASS_NAMES)
+    print_confidence_stats(probs, labels, predictions, CLASS_NAMES)
     print_classification_report(labels, predictions, CLASS_NAMES)
     plot_confusion_matrix(labels, predictions, CLASS_NAMES)
-    
+
     print("\n" + "=" * 60)
     print("✅ Evaluation Complete!")
     print("=" * 60)

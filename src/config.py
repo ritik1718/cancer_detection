@@ -18,7 +18,7 @@ class Config:
     # Training hyperparameters
     BATCH_SIZE = 8  # Reduced for larger model
     NUM_EPOCHS = 30
-    LEARNING_RATE = 5e-5  # Reduced for fine-tuning stability
+    LEARNING_RATE = 5e-5
     WEIGHT_DECAY = 1e-4
     
     IMG_SIZE = 384  # Updated for Swin-384
